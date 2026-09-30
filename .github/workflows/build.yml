@@ -1,0 +1,43 @@
+name: Build APK
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: stable
+          cache: true
+
+      # المستودع لا يحتوي مجلد android كاملاً (gradle / MainActivity / الأيقونات ...)،
+      # فنولّده بقالب Flutter الرسمي (Android v2 embedding) ثم نعيد AndroidManifest الخاص بنا.
+      - name: Generate Android scaffold
+        run: |
+          cp android/app/src/main/AndroidManifest.xml "$RUNNER_TEMP/AndroidManifest.xml"
+          rm -rf android
+          flutter create --platforms=android --org com.fati --project-name student_calendar .
+          cp "$RUNNER_TEMP/AndroidManifest.xml" android/app/src/main/AndroidManifest.xml
+          python3 scripts/patch_android.py
+
+      # نسخ أيقونات التطبيق المخصصة (تولّدت من صورة المستخدم)
+      - name: Copy custom app icons
+        run: |
+          mkdir -p android/app/src/main/res
+          cp -r assets/icons/mipmap-* android/app/src/main/res/
+
+      - run: flutter pub get
+      - run: flutter build apk --debug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: student-calendar-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
